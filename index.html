@@ -1,0 +1,691 @@
+<!doctype html>
+<html lang="hr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Preglednik EKG signala i anotacija iz baze BUT QDB, s presudama modela razine A0.">
+<title>Pregled EKG anotacija</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;600&family=Source+Sans+3:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Instrumentni raspored: jedan stupac, traka s odabirom, pa jedna pomicna traka (signal gore, anotacije dolje na istoj osi) i brojevi ispod. */
+:root{
+  --bg:#f4f6f7; --panel:#ffffff; --ink:#19242b; --muted:#5d6f7a; --line:#d4dde2;
+  --accent:#2d6485; --accent-soft:#e4edf3;
+  --paper:#fffaf8; --grid-min:#f0cbc4; --grid-maj:#dd9a8e; --trace:#1d2a31;
+  --c1:#1a7f68; --c2:#b8820f; --c3:#b0342a; --c0:#aab7bf;
+  --f-disp:"Bitter",Georgia,"Times New Roman",serif;
+  --f-body:"Source Sans 3",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1418; --panel:#171e23; --ink:#e2e9ed; --muted:#93a4ae; --line:#2a353c;
+  --accent:#6fb3d8; --accent-soft:#1c2b35;
+  --paper:#141a1e; --grid-min:#36231f; --grid-maj:#58322b; --trace:#e8eff3;
+  --c1:#3fae92; --c2:#dca82f; --c3:#e0655a; --c0:#5c6b74;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#0f1418; --panel:#171e23; --ink:#e2e9ed; --muted:#93a4ae; --line:#2a353c;
+  --accent:#6fb3d8; --accent-soft:#1c2b35;
+  --paper:#141a1e; --grid-min:#36231f; --grid-maj:#58322b; --trace:#e8eff3;
+  --c1:#3fae92; --c2:#dca82f; --c3:#e0655a; --c0:#5c6b74;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 48px}
+h1{font-family:var(--f-disp);font-weight:600;font-size:1.3rem;margin:0;letter-spacing:-.01em;text-wrap:balance}
+h2{font-family:var(--f-disp);font-weight:600;font-size:.82rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:0}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--panel)}
+
+header{position:sticky;top:env(safe-area-inset-top,0px);z-index:9;background:var(--panel);border-bottom:1px solid var(--line)}
+.hdr{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:10px 12px;display:flex;flex-direction:column;gap:10px}
+.hdr-top{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px}
+.sub{color:var(--muted);font-size:.82rem}
+.ctrls{display:flex;flex-wrap:wrap;gap:8px 14px}
+.ctrl{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ctrl label{font-size:.66rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+select{font-family:var(--f-mono);font-size:.78rem;padding:4px 6px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:3px;max-width:100%}
+select:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:4px;margin-top:16px}
+.card-h{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.card-b{padding:12px 14px}
+.cv{display:block;width:100%}
+.hint{color:var(--muted);font-size:.74rem;font-family:var(--f-mono)}
+
+#stripwrap{overflow-x:auto;overflow-y:hidden;border:1px solid var(--line);border-radius:3px}
+#strip{cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+#strip.drag{cursor:grabbing}
+#strip.nodrag{cursor:default;touch-action:auto}
+.slider{display:flex;align-items:center;gap:10px;margin-top:10px}
+.slider input[type=range]{flex:1;min-width:0;accent-color:var(--accent);height:22px}
+
+.nav{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+button{font-family:var(--f-body);font-size:.82rem;font-weight:600;padding:5px 11px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:3px;cursor:pointer}
+button:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+button:disabled{opacity:.4;cursor:default}
+button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.seg{display:flex;gap:0}
+.seg button{border-radius:0;margin-left:-1px;padding:5px 9px}
+.seg button:first-child{border-radius:3px 0 0 3px;margin-left:0}
+.seg button:last-child{border-radius:0 3px 3px 0}
+.pill{display:inline-flex;align-items:center;gap:6px;font-family:var(--f-mono);font-size:.74rem;font-weight:500;padding:3px 8px;border-radius:999px;border:1px solid currentColor}
+.dot{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}
+.k1{color:var(--c1)}.k2{color:var(--c2)}.k3{color:var(--c3)}.k0{color:var(--c0)}
+.pos{font-family:var(--f-mono);font-size:.8rem;font-variant-numeric:tabular-nums;color:var(--muted)}
+
+table{width:100%;border-collapse:collapse;font-size:.8rem}
+th,td{text-align:left;padding:4px 10px 4px 0;border-bottom:1px solid var(--line);vertical-align:baseline}
+th{font-size:.66rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600}
+td.n,th.n{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums;padding-right:0}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0 28px}
+.scroll{overflow-x:auto}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:.74rem;color:var(--muted);font-family:var(--f-mono);margin-top:6px}
+.note{font-size:.76rem;color:var(--muted);border-left:2px solid var(--line);padding-left:10px;margin-top:10px}
+.note b{color:var(--ink);font-weight:600}
+.big{font-family:var(--f-mono);font-size:1.5rem;font-weight:500;font-variant-numeric:tabular-nums;line-height:1.1}
+.stat{display:flex;flex-direction:column;gap:2px}
+.stat span{font-size:.66rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600}
+.stats{display:flex;flex-wrap:wrap;gap:14px 30px}
+#load{padding:40px 0;color:var(--muted);font-family:var(--f-mono);font-size:.82rem}
+@media (max-width:760px){header{position:static}}
+@media (max-width:560px){.hdr-top h1{font-size:1.12rem}.big{font-size:1.25rem}.ctrl{flex:1 1 150px}}
+</style>
+<style>
+/* Osnove koje je dosad dodavalo okruzenje Artifacta; sada ih stranica nosi sama. */
+:root{color-scheme:light}
+img{max-width:100%}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<header><div class="hdr">
+  <div class="hdr-top">
+    <h1>Pregled EKG anotacija</h1>
+    <span class="sub">BUT QDB &middot; 15 snimaka &middot; 958 prozora od 5&nbsp;s &middot; 1000&nbsp;Hz</span>
+  </div>
+  <div class="ctrls">
+    <div class="ctrl"><label for="rec">Snimka</label><select id="rec"></select></div>
+    <div class="ctrl"><label for="filt">Skakanje po prozorima</label><select id="filt"></select></div>
+    <div class="ctrl"><label for="run">Zadatak i značajke</label><select id="run"></select></div>
+    <div class="ctrl"><label for="strat">Model</label><select id="strat"></select></div>
+    <div class="ctrl"><label for="mode">Način rada</label><select id="mode"></select></div>
+  </div>
+</div></header>
+
+<div class="wrap">
+<div id="load">Učitavam podatke&hellip;</div>
+
+<div id="app" hidden>
+
+  <section class="card">
+    <div class="card-h"><h2>Cijela snimka</h2><span class="hint" id="recinfo"></span></div>
+    <div class="card-b">
+      <canvas id="ovw" class="cv" height="168"></canvas>
+      <div class="legend" id="leg"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-h">
+      <div class="nav">
+        <button id="prev">&larr; prozor</button>
+        <button id="next">prozor &rarr;</button>
+        <span class="pos" id="pos"></span>
+      </div>
+      <div class="nav">
+        <span class="hint">širina trake</span>
+        <span class="seg" id="span"></span>
+        <span class="hint">razvuci</span>
+        <span class="seg" id="mult"></span>
+      </div>
+    </div>
+    <div class="card-b">
+      <div id="stripwrap"><div id="strip">
+        <canvas id="ecg" class="cv" height="250"></canvas>
+        <canvas id="ann" class="cv" height="140"></canvas>
+      </div></div>
+      <div class="slider">
+        <span class="hint">položaj</span>
+        <input type="range" id="posr" min="0" max="100" step="1" value="0" aria-label="Položaj u snimci">
+        <span class="pos" id="poslbl"></span>
+      </div>
+      <div class="hint" id="ecginfo"></div>
+      <div class="legend" id="leg2"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-h"><h2>Prozor u sredini trake</h2><span class="hint" id="runinfo"></span></div>
+    <div class="card-b">
+      <div class="stats" id="verdict"></div>
+      <div class="note" id="annnote"></div>
+      <div class="note" id="vnote"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-h"><h2>SQI značajke</h2><span class="hint">18 brojeva izračunatih iz 5000 uzoraka</span></div>
+    <div class="card-b"><div class="grid2" id="sqi"></div></div>
+  </section>
+
+  <section class="card">
+    <div class="card-h"><h2>Odakle su podaci</h2></div>
+    <div class="card-b"><div class="note" id="prov"></div></div>
+  </section>
+
+</div>
+</div>
+
+<script>
+"use strict";
+var D=null,REC=null,WI=0,SPAN=15,T0=0,FILT="all",YLO=-1,YHI=1,MULT=1;
+var CLSNAME={0:"bez oznake",1:"klasa 1 — čist",2:"klasa 2 — koristiv",3:"klasa 3 — neupotrebljiv"};
+var byRecord={},winSet={};
+
+function $(id){return document.getElementById(id)}
+function fmtT(s,dec){var h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%3600%60;
+  if(dec==null)dec=(h||m)?0:2;
+  return (h?h+"h ":"")+(h||m?String(m).padStart(2,"0")+"m ":"")+x.toFixed(dec)+"s"}
+function css(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim()}
+function b64(s){var r=atob(s),u=new Uint8Array(r.length);
+  for(var i=0;i<r.length;i++)u[i]=r.charCodeAt(i);
+  return new Int16Array(u.buffer,0,u.length>>1)}
+
+fetch("podaci/anotacije.json?v=1794334555").then(function(r){
+  if(!r.ok)throw new Error("HTTP "+r.status+" pri dohvatu podataka");
+  return r.json();
+}).then(function(d){
+  D=d;
+  var m=D.samples.meta;
+  for(var i=0;i<m.length;i++){
+    (byRecord[m[i][0]]=byRecord[m[i][0]]||[]).push(i);
+    winSet[m[i][0]+"_"+m[i][2]]=i;
+  }
+  for(var k in byRecord)byRecord[k].sort(function(a,b){return m[a][2]-m[b][2]});
+  build();$("load").hidden=true;$("app").hidden=false;centerOn(WI);draw();
+}).catch(function(e){$("load").textContent="Podaci se nisu učitali: "+e.message});
+
+function opt(sel,vals,labels,cur){
+  sel.innerHTML="";
+  vals.forEach(function(v,i){
+    var o=document.createElement("option");o.value=v;o.textContent=labels?labels[i]:v;
+    if(v===cur)o.selected=true;sel.appendChild(o);
+  });
+}
+function seg(el,vals,labels,cb,cur){
+  el.innerHTML="";
+  vals.forEach(function(v,i){
+    var b=document.createElement("button");
+    b.textContent=labels[i];if(v===cur)b.className="on";
+    b.addEventListener("click",function(){
+      [].forEach.call(el.children,function(c){c.className=""});
+      b.className="on";cb(v);
+    });
+    el.appendChild(b);
+  });
+}
+
+function build(){
+  var recs=Object.keys(D.records).sort();REC=recs[0];
+  opt($("rec"),recs,recs.map(function(r){
+    return r+"  ("+(byRecord[r]||[]).length+" prozora, "+Math.round(D.records[r].n/D.records[r].fs/3600)+" h)";
+  }),REC);
+  opt($("filt"),["all","k1","k2","k3","miss","unc"],
+    ["svi prozori","samo klasa 1","samo klasa 2","samo klasa 3","samo promašaji modela","samo nesigurni"],"all");
+  var runs=Object.keys(D.runs).sort();
+  opt($("run"),runs,runs.map(function(r){return r.replace("_"," · ").replace("_SQI"," SQI")}),"QRS_18_SQI");
+  rebuildStrat();
+
+  ["rec","filt","run","strat","mode"].forEach(function(id){
+    $(id).addEventListener("change",function(){
+      if(id==="rec"){REC=$("rec").value;WI=0;centerOn(0)}
+      if(id==="run")rebuildStrat();
+      if(id==="strat")rebuildMode();
+      if(id==="filt"){FILT=$("filt").value;WI=0;centerOn(0)}
+      draw();
+    });
+  });
+  seg($("span"),[5,15,60,300,1800],["5 s","15 s","1 min","5 min","30 min"],
+      function(v){var c=T0+SPAN*500;SPAN=v;T0=c-SPAN*500;clampT();draw()},15);
+  seg($("mult"),[1,2,5,12],["stane u ekran","2×","5×","12×"],
+      function(v){MULT=v;$("stripwrap").scrollLeft=0;draw()},1);
+
+  $("posr").addEventListener("input",function(){T0=+$("posr").value;clampT();draw()});
+  $("stripwrap").addEventListener("scroll",function(){
+    if(MULT===1)return;
+    var si=centreWindow();drawEcg(si);drawAnn(si);fill(si);
+  });
+
+  $("prev").addEventListener("click",function(){step(-1)});
+  $("next").addEventListener("click",function(){step(1)});
+  document.addEventListener("keydown",function(e){
+    if(e.target.tagName==="SELECT")return;
+    var fs=D.records[REC].fs;
+    if(e.key==="ArrowLeft"){T0-=SPAN*fs*(e.shiftKey?1:.25);clampT();draw();e.preventDefault()}
+    if(e.key==="ArrowRight"){T0+=SPAN*fs*(e.shiftKey?1:.25);clampT();draw();e.preventDefault()}
+    if(e.key==="["){step(-1);e.preventDefault()}
+    if(e.key==="]"){step(1);e.preventDefault()}
+  });
+  $("ovw").addEventListener("click",ovwClick);
+  dragSetup();
+  /* Promatramo SAMO okvir trake, i to samo promjenu sirine, pa redraw ne moze
+     pokrenuti novu obavijest: setWidths mijenja sirinu djece, ne okvira.
+     Posao se odgadja do sljedeceg kadra da se obavijesti ne gomilaju. */
+  var lastW=-1,pending=false;
+  new ResizeObserver(function(){
+    if(pending)return;
+    pending=true;
+    requestAnimationFrame(function(){
+      pending=false;
+      var w=$("stripwrap").clientWidth||0;
+      if(w===lastW||!w)return;
+      lastW=w;draw();
+    });
+  }).observe($("stripwrap"));
+
+  var leg=[1,2,3,0].map(function(c){
+    return '<span class="pill k'+c+'"><span class="dot"></span>'+CLSNAME[c]+'</span>';
+  }).join("");
+  $("leg").innerHTML=leg+'<span class="hint">klikni u traku da skočiš na najbliži prozor</span>';
+  $("leg2").innerHTML='<span class="hint">klizač pomiče traku kroz cijelu snimku &middot; strelice ← → pomiču za četvrtinu širine (sa Shift za cijelu) &middot; [ i ] skaču na prethodni/sljedeći izmjereni prozor &middot; u načinu „stane u ekran" traku možeš i vući mišem, a na 2× i više kližeš vodoravno unutar okvira</span>';
+
+  $("prov").innerHTML=
+    "<b>Signal.</b> Brno University of Technology ECG Quality Database (BUT QDB), 18 snimaka od ~25 h, "+
+    "15 osoba, jedan kanal, 1000 Hz. Licencija CC BY 4.0, DOI 10.13026/kah4-0w24.<br>"+
+    "<b>Zašto signal nije neprekinut.</b> Cijele snimke su po 178 MB i nisu u ovoj stranici. "+
+    "Spremljeno je 958 prozora od 5 s koji su ušli u mjerenja — 0,16 % trajanja snimke. "+
+    "Od toga su 858 prozora izolirani, 34 su po dva uzastopna (10 s), pet po tri (15 s), "+
+    "jedan niz od 25 s i jedan od 60 s (114001). Dulje od 60 s neprekinutog signala ne postoji nigdje u bazi. "+
+    "<b>Anotacije, nasuprot tome, postoje za cijelu dužinu svake snimke</b>, pa donja traka nikad nije prazna.<br>"+
+    "<b>Milivolti.</b> Iz zaglavlja (npr. <code>1.996(-12200)/uV</code>): mV = (jedinica − baseline) / (pojačanje × 1000). "+
+    "Signal je prikazan ovojnicom min/max po 10 ms (500 parova na 5 s), ne uzorak po uzorak.<br>"+
+    "<b>Presude modela.</b> Pročitane iz <code>predictions.csv</code> četiriju mjerenja v0.4 "+
+    "(QRS i MORFOLOGIJA × 13 i 18 SQI), 21 kombinacija modela i načina rada po mjerenju. "+
+    "Nije ovdje ponovno računato — prikazuje se ono što je izmjereno.";
+}
+
+function rebuildStrat(){
+  var ks=Object.keys(D.runs[$("run").value]),strats=[];
+  ks.forEach(function(k){var s=k.split("|")[0];if(strats.indexOf(s)<0)strats.push(s)});
+  strats.sort();
+  var cur=$("strat").value;
+  opt($("strat"),strats,null,strats.indexOf(cur)>=0?cur:"lr");
+  rebuildMode();
+}
+function rebuildMode(){
+  var run=D.runs[$("run").value],s=$("strat").value,modes=[];
+  Object.keys(run).forEach(function(k){var p=k.split("|");if(p[0]===s)modes.push(p[1])});
+  modes.sort();
+  var cur=$("mode").value;
+  opt($("mode"),modes,modes.map(function(m){
+    return m==="fixed_v03"?"fixed_v03 (prag 0,5)":m==="strict_binary"?"strict_binary (naučen prag)":"triage (dva praga)";
+  }),modes.indexOf(cur)>=0?cur:modes[0]);
+}
+
+/* ---------- izvedeno ---------- */
+function task(){return $("run").value.indexOf("QRS")===0?"QRS":"MORPH"}
+function trueBad(l){return task()==="QRS"?(l===3?1:0):(l>=2?1:0)}
+function combo(){var r=D.runs[$("run").value],k=$("strat").value+"|"+$("mode").value;return r[k]||null}
+function stateOf(i){var c=combo();if(!c)return null;var ch=c.state.charAt(i);return ch==="-"?null:+ch}
+function isMiss(i){var st=stateOf(i);if(st==null||st===2)return false;
+  return (st===1?1:0)!==trueBad(D.samples.meta[i][3])}
+function visible(){
+  var all=byRecord[REC]||[];
+  if(FILT==="all")return all;
+  return all.filter(function(i){
+    var l=D.samples.meta[i][3];
+    if(FILT==="k1")return l===1;if(FILT==="k2")return l===2;if(FILT==="k3")return l===3;
+    if(FILT==="miss")return isMiss(i);if(FILT==="unc")return stateOf(i)===2;
+    return true;
+  });
+}
+function clampT(){
+  var R=D.records[REC],w=SPAN*R.fs;
+  if(T0>R.n-w)T0=R.n-w;
+  if(T0<0)T0=0;
+}
+function centerOn(wi){
+  var vis=visible();if(!vis.length){T0=0;return}
+  if(wi<0)wi=0;if(wi>=vis.length)wi=vis.length-1;
+  WI=wi;T0=D.samples.meta[vis[wi]][2]+2500-SPAN*D.records[REC].fs/2;clampT();
+}
+function step(d){
+  var vis=visible();if(!vis.length)return;
+  var i=WI+d;if(i<0)i=vis.length-1;if(i>=vis.length)i=0;
+  centerOn(i);draw();scrollToSample(D.samples.meta[vis[i]][2]+2500);
+}
+/* sredina onoga sto se stvarno vidi (traka moze biti sira od okvira) */
+function viewCentre(){
+  var R=D.records[REC],cssW=$("ecg").clientWidth||600,pw=Math.max(10,cssW-PADL-PADR);
+  var wrap=$("stripwrap"),vx=(wrap.scrollLeft||0)+(wrap.clientWidth||cssW)/2;
+  var f=(vx-PADL)/pw;f=f<0?0:f>1?1:f;
+  return T0+f*SPAN*R.fs;
+}
+function scrollToSample(s){
+  if(MULT===1)return;
+  var wrap=$("stripwrap"),cssW=$("ecg").clientWidth||600,pw=Math.max(10,cssW-PADL-PADR);
+  var x=PADL+(s-T0)/(SPAN*D.records[REC].fs)*pw;
+  wrap.scrollLeft=x-wrap.clientWidth/2;
+}
+/* prozor najblizi sredini vidljivog dijela */
+function centreWindow(){
+  var vis=visible();if(!vis.length)return null;
+  var c=viewCentre(),best=0,bd=Infinity;
+  vis.forEach(function(i,n){var d=Math.abs(D.samples.meta[i][2]+2500-c);if(d<bd){bd=d;best=n}});
+  WI=best;return vis[best];
+}
+function setWidths(){
+  var w=Math.round((($("stripwrap").clientWidth)||600)*MULT);
+  $("strip").style.width=w+"px";
+  $("ecg").style.width=w+"px";
+  $("ann").style.width=w+"px";
+  $("strip").classList.toggle("nodrag",MULT!==1);
+}
+function syncSlider(){
+  var R=D.records[REC],mx=Math.max(0,R.n-SPAN*R.fs),s=$("posr");
+  s.min=0;s.max=mx;s.step=R.fs;s.value=Math.round(T0);
+  $("poslbl").textContent=fmtT(T0/R.fs)+" / "+fmtT(R.n/R.fs);
+}
+
+/* ---------- povlacenje ---------- */
+function dragSetup(){
+  var el=$("strip"),px=null;
+  el.addEventListener("pointerdown",function(e){
+    if(MULT!==1)return;
+    px=e.clientX;el.setPointerCapture(e.pointerId);el.classList.add("drag");
+  });
+  el.addEventListener("pointermove",function(e){
+    if(px===null)return;
+    var pw=Math.max(10,$("ecg").clientWidth-PADL-PADR);
+    T0-=(e.clientX-px)/pw*SPAN*D.records[REC].fs;
+    px=e.clientX;clampT();draw();
+  });
+  ["pointerup","pointercancel","pointerleave"].forEach(function(ev){
+    el.addEventListener(ev,function(){px=null;el.classList.remove("drag")});
+  });
+}
+
+/* ---------- crtanje ---------- */
+var PADL=60,PADR=10;
+function prep(cv){
+  var dpr=window.devicePixelRatio||1,w=cv.clientWidth||600,h=+cv.getAttribute("height");
+  cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr);cv.style.height=h+"px";
+  var x=cv.getContext("2d");x.setTransform(dpr,0,0,dpr,0,0);x.clearRect(0,0,w,h);
+  return {g:x,w:w,h:h};
+}
+function mvStep(r){
+  if(r<=5)return .5;
+  var c=[1,2,5,10,20,50];
+  for(var i=0;i<c.length;i++)if(r/c[i]<=10)return c[i];
+  return 100;
+}
+function draw(){
+  if(!D)return;
+  setWidths();
+  var si=centreWindow();
+  drawOvw(si);drawEcg(si);drawAnn(si);fill(si);syncSlider();
+}
+
+function drawOvw(si){
+  var c=prep($("ovw")),g=c.g,R=D.records[REC],N=R.n,W=c.w;
+  var rowH=24,top=16,lblW=76,x0=lblW,pw=Math.max(10,W-lblW-4);
+  var col=[css("--c0"),css("--c1"),css("--c2"),css("--c3")];
+  g.font='500 10px '+css("--f-mono");
+  for(var k=0;k<4;k++){
+    var y=top+k*rowH,acc=new Uint8Array(pw),t=R.ann[k];
+    for(var j=0;j<t.length;j+=3){
+      var a=Math.floor(t[j]/N*pw),b=Math.max(a+1,Math.ceil(t[j+1]/N*pw));
+      if(b>pw)b=pw;
+      for(var p=a;p<b;p++)if(t[j+2]>acc[p])acc[p]=t[j+2];
+    }
+    g.fillStyle=css("--line");g.fillRect(x0,y,pw,rowH-7);
+    for(var p=0;p<pw;p++){if(!acc[p])continue;g.fillStyle=col[acc[p]];g.fillRect(x0+p,y,1,rowH-7)}
+    g.fillStyle=css("--muted");g.textAlign="right";g.fillText("trag "+(k+1),lblW-8,y+12);
+  }
+  var yw=top+4*rowH+2;
+  g.fillStyle=css("--muted");g.textAlign="right";g.fillText("prozori",lblW-8,yw+10);
+  (byRecord[REC]||[]).forEach(function(i){
+    var x=x0+Math.floor(D.samples.meta[i][2]/N*pw);
+    g.fillStyle=col[D.samples.meta[i][3]];g.fillRect(x,yw,1.5,11);
+  });
+  /* gdje je traka */
+  var xa=x0+T0/N*pw,xb=x0+Math.min(N,T0+SPAN*R.fs)/N*pw;
+  g.fillStyle=css("--accent-soft");g.globalAlpha=.75;
+  g.fillRect(xa,top-8,Math.max(2,xb-xa),4*rowH+22);g.globalAlpha=1;
+  g.strokeStyle=css("--accent");g.lineWidth=1.5;
+  g.strokeRect(xa,top-8,Math.max(2,xb-xa),4*rowH+22);
+
+  var hrs=N/R.fs/3600;g.fillStyle=css("--muted");g.textAlign="left";
+  for(var h=0;h<=Math.floor(hrs);h+=Math.max(1,Math.ceil(hrs/10))){
+    var x=x0+h*3600*R.fs/N*pw;g.fillRect(x,yw+15,1,4);
+    if(x+20<=x0+pw)g.fillText(h+"h",x+3,yw+24);
+  }
+  $("recinfo").textContent=REC+" · "+fmtT(N/R.fs)+" · intervali po tragu: "+
+    R.ann.map(function(t){return t.length/3}).join(" / ")+" · "+(byRecord[REC]||[]).length+" prozora u mjerenju";
+}
+function ovwClick(e){
+  var cv=$("ovw"),r=cv.getBoundingClientRect(),R=D.records[REC];
+  var lblW=76,pw=Math.max(10,cv.clientWidth-lblW-4);
+  var f=(e.clientX-r.left-lblW)/pw;f=f<0?0:f>1?1:f;
+  T0=f*R.n-SPAN*R.fs/2;clampT();draw();
+}
+
+function drawEcg(si){
+  var c=prep($("ecg")),g=c.g,W=c.w,H=c.h;
+  var padT=10,padB=4,pw=Math.max(10,W-PADL-PADR),ph=H-padT-padB;
+  var R=D.records[REC],fs=R.fs,T1=T0+SPAN*fs;
+  function X(s){return PADL+(s-T0)/(T1-T0)*pw}
+  /* podloga bez signala: prazna, bez mreze */
+  g.fillStyle=css("--bg");g.fillRect(PADL,padT,pw,ph);
+
+  /* koji spremljeni prozori padaju u traku */
+  var segs=[];
+  (byRecord[REC]||[]).forEach(function(i){
+    var st=D.samples.meta[i][2];
+    if(st+5000>T0&&st<T1)segs.push(i);
+  });
+  var lo=Infinity,hi=-Infinity;
+  segs.forEach(function(i){
+    var raw=b64(R.win[String(D.samples.meta[i][2])]);
+    for(var j=0;j<raw.length;j++){
+      var v=(raw[j]-R.baseline)/R.per_mv;
+      if(v<lo)lo=v;if(v>hi)hi=v;
+    }
+  });
+  if(lo===Infinity){lo=YLO;hi=YHI}
+  else{var mid=(lo+hi)/2,half=Math.max(.75,(hi-lo)/2*1.12);lo=mid-half;hi=mid+half;YLO=lo;YHI=hi}
+  var mvPx=ph/(hi-lo);
+  function Y(mv){return padT+(hi-mv)*mvPx}
+  var maj=mvStep(hi-lo),mino=maj/5;
+
+  /* EKG papir postoji samo ondje gdje postoji signal */
+  g.save();g.beginPath();
+  segs.forEach(function(i){
+    var st=D.samples.meta[i][2],xa=Math.max(PADL,X(st)),xb=Math.min(PADL+pw,X(st+5000));
+    if(xb>xa)g.rect(xa,padT,xb-xa,ph);
+  });
+  if(!segs.length)g.rect(0,0,0,0);
+  g.clip();
+  g.fillStyle=css("--paper");g.fillRect(PADL,padT,pw,ph);
+  /* EKG mreza */
+  var tStep=SPAN<=5?.04:SPAN<=15?.2:SPAN<=60?1:SPAN<=300?5:30;
+  g.lineWidth=.5;g.strokeStyle=css("--grid-min");g.beginPath();
+  for(var s=Math.ceil(T0/fs/tStep)*tStep;s*fs<T1;s+=tStep){g.moveTo(X(s*fs),padT);g.lineTo(X(s*fs),padT+ph)}
+  for(var v=Math.ceil(lo/mino)*mino;v<=hi;v+=mino){g.moveTo(PADL,Y(v));g.lineTo(PADL+pw,Y(v))}
+  g.stroke();
+  g.lineWidth=.9;g.strokeStyle=css("--grid-maj");g.beginPath();
+  for(var s=Math.ceil(T0/fs/(tStep*5))*tStep*5;s*fs<T1;s+=tStep*5){g.moveTo(X(s*fs),padT);g.lineTo(X(s*fs),padT+ph)}
+  for(var v=Math.ceil(lo/maj)*maj;v<=hi;v+=maj){g.moveTo(PADL,Y(v));g.lineTo(PADL+pw,Y(v))}
+  g.stroke();
+  /* trag */
+  g.strokeStyle=css("--trace");g.lineWidth=1.1;g.lineJoin="round";
+  segs.forEach(function(i){
+    var st=D.samples.meta[i][2],raw=b64(R.win[String(st)]),nb=raw.length>>1,sp=5000/nb;
+    g.beginPath();
+    for(var j=0;j<nb;j++){
+      var x=X(st+j*sp),
+          a=(raw[2*j]-R.baseline)/R.per_mv,b=(raw[2*j+1]-R.baseline)/R.per_mv;
+      if(j===0)g.moveTo(x,Y(b));else g.lineTo(x,Y(b));
+      g.lineTo(x,Y(a));
+    }
+    g.stroke();
+  });
+  g.restore();
+  g.strokeStyle=css("--line");g.lineWidth=1;g.strokeRect(PADL,padT,pw,ph);
+
+  var sx=$("stripwrap").scrollLeft||0,vw=$("stripwrap").clientWidth||W;
+  if(!segs.length){
+    g.fillStyle=css("--muted");g.font='400 12px '+css("--f-mono");g.textAlign="center";
+    g.fillText("u ovom dijelu snimke nema spremljenog signala — anotacije ispod i dalje vrijede",
+               sx+vw/2,padT+ph/2);
+  }
+  /* zamrznuti lijevi stupac: ostaje na rubu okvira i kad je traka razvucena */
+  g.fillStyle=css("--panel");g.fillRect(sx,0,PADL,H);
+  g.fillStyle=css("--muted");g.font='400 10px '+css("--f-mono");g.textAlign="right";
+  var dec=maj<1?1:0;
+  for(var v=Math.ceil(lo/maj)*maj;v<=hi;v+=maj){
+    if(Y(v)<padT+8||Y(v)>padT+ph-2)continue;
+    g.fillText(v.toFixed(dec),sx+PADL-6,Y(v)+3);
+  }
+  g.save();g.translate(sx+14,padT+ph/2);g.rotate(-Math.PI/2);g.textAlign="center";
+  g.fillText("mV",0,0);g.restore();
+
+  var covered=segs.length*5000,
+      visSpan=Math.min(T1,R.n)-T0;
+  $("ecginfo").textContent="traka "+fmtT(T0/fs)+" → "+fmtT(Math.min(T1,R.n)/fs)+
+    "  ·  širina "+(SPAN<60?SPAN+" s":(SPAN/60)+" min")+
+    "  ·  signal na "+segs.length+" prozora ("+(covered/visSpan*100).toFixed(0)+" % širine)"+
+    "  ·  mreža "+(tStep*5)+" s × "+String(maj).replace(".",",")+" mV"+
+    (maj===.5&&tStep===.04?" (standardna EKG mreža)":"");
+}
+
+function drawAnn(si){
+  var c=prep($("ann")),g=c.g,W=c.w,H=c.h;
+  var padT=6,pw=Math.max(10,W-PADL-PADR);
+  var R=D.records[REC],fs=R.fs,T1=T0+SPAN*fs;
+  function X(s){return PADL+(s-T0)/(T1-T0)*pw}
+  var col=[css("--c0"),css("--c1"),css("--c2"),css("--c3")],rowH=26;
+  g.font='500 10px '+css("--f-mono");
+  for(var k=0;k<4;k++){
+    var y=padT+k*rowH,t=R.ann[k];
+    g.fillStyle=css("--line");g.fillRect(PADL,y,pw,rowH-8);
+    g.save();g.beginPath();g.rect(PADL,y,pw,rowH-8);g.clip();
+    for(var j=0;j<t.length;j+=3){
+      if(t[j+1]<=T0||t[j]>=T1)continue;
+      var x1=X(t[j]),x2=X(t[j+1]);
+      g.fillStyle=col[t[j+2]];g.fillRect(x1,y,Math.max(1.2,x2-x1),rowH-8);
+      var v1=Math.max(x1,PADL),v2=Math.min(x2,PADL+pw);
+      if(v2-v1>22){g.fillStyle=css("--paper");g.textAlign="center";g.fillText(String(t[j+2]),(v1+v2)/2,y+rowH-15)}
+    }
+    g.restore();
+  }
+  /* okvir oko prozora u sredini */
+  if(si!=null){
+    var st=D.samples.meta[si][2];
+    if(st+5000>T0&&st<T1){
+      g.strokeStyle=css("--accent");g.lineWidth=1.5;
+      g.strokeRect(X(st),padT-3,Math.max(2,X(st+5000)-X(st)),4*rowH+1);
+    }
+  }
+  var yl=padT+4*rowH+2,ticks=Math.max(6,Math.round(pw/180));
+  var dt=(T1-T0)/fs/ticks,tdec=dt<1?2:dt<10?1:0;
+  g.fillStyle=css("--muted");g.font='400 10px '+css("--f-mono");
+  for(var i=0;i<=ticks;i++){
+    var sm=T0+(T1-T0)*i/ticks,x=X(sm);
+    g.fillRect(x,yl,1,4);
+    g.textAlign=i===0?"left":i===ticks?"right":"center";
+    g.fillText(fmtT(sm/fs,tdec),x,yl+15);
+  }
+  /* zamrznuti lijevi stupac s oznakama tragova */
+  var sx=$("stripwrap").scrollLeft||0;
+  g.fillStyle=css("--panel");g.fillRect(sx,0,PADL,H);
+  g.fillStyle=css("--muted");g.font='500 10px '+css("--f-mono");g.textAlign="right";
+  for(var k=0;k<4;k++)g.fillText("trag "+(k+1),sx+PADL-8,padT+k*rowH+rowH-15);
+}
+
+function fill(si){
+  var vis=visible();
+  $("prev").disabled=$("next").disabled=vis.length<2;
+  $("pos").textContent=vis.length?("prozor "+(WI+1)+" / "+vis.length+
+    (FILT!=="all"?" (filtrirano od "+(byRecord[REC]||[]).length+")":"")):"nema prozora za ovaj filtar";
+  if(si==null){["verdict","annnote","vnote","sqi","runinfo"].forEach(function(id){$(id).innerHTML=""});return}
+
+  var m=D.samples.meta[si],cb=combo(),st=stateOf(si),sc=cb?cb.score[si]:null;
+  var fold=D.samples.fold[si],th=cb&&cb.thresholds[String(fold)],tb=trueBad(m[3]),mode=$("mode").value;
+  var lbl,kls;
+  if(st==null){lbl="—";kls="k0"}
+  else if(mode==="triage"){lbl=st===0?"DOBAR":st===1?"LOŠ":"NESIGURAN";kls=st===0?"k1":st===1?"k3":"k2"}
+  else{lbl=st===1?"LOŠ":"DOBAR";kls=st===1?"k3":"k1"}
+  var okTxt,okKls;
+  if(st==null){okTxt="—";okKls="k0"}
+  else if(st===2){okTxt="poslano dalje";okKls="k2"}
+  else if((st===1?1:0)===tb){okTxt="pogodio";okKls="k1"}
+  else{okTxt=tb?"propustio loš":"odbacio dobar";okKls="k3"}
+
+  $("verdict").innerHTML=
+    stat("Prozor u sredini",fmtT(m[2]/D.records[REC].fs),"")+
+    stat("Oznaka struke","klasa "+m[3],"k"+m[3])+
+    stat("Istina za "+task(),tb?"LOŠ":"DOBAR",tb?"k3":"k1")+
+    stat("Presuda modela",lbl,kls)+
+    stat("Ishod",okTxt,okKls)+
+    stat("score_bad",sc==null?"—":sc.toFixed(4),"")+
+    stat("Pacijent","#"+m[1],"")+
+    stat("Fold",String(fold),"");
+
+  /* sastav anotacija unutar tog prozora */
+  var start=m[2],R=D.records[REC];
+  var txt=[0,1,2,3].map(function(k){
+    var t=R.ann[k],tot={},all=0;
+    for(var j=0;j<t.length;j+=3){
+      if(t[j+1]<=start||t[j]>=start+5000)continue;
+      var ov=Math.min(t[j+1],start+5000)-Math.max(t[j],start);
+      tot[t[j+2]]=(tot[t[j+2]]||0)+ov;all+=ov;
+    }
+    if(!all)return "trag "+(k+1)+": bez oznake";
+    var parts=Object.keys(tot).sort().map(function(cl){return "klasa "+cl+" "+(tot[cl]/5000*100).toFixed(0)+" %"});
+    return "trag "+(k+1)+": "+parts.join(", ")+(all<5000?", nepokriveno "+((5000-all)/5000*100).toFixed(0)+" %":"");
+  }).join("<br>");
+  $("annnote").innerHTML="<b>Što četiri traga kažu za ovih 5 s</b><br>"+txt+
+    "<br><br>Oznaka prozora u mjerenju je <b>klasa "+m[3]+"</b>, uzeta iz traga 4 (stupci 10–12 u "+REC+
+    "_ANN.csv). Prozori su rezani unutar jednog intervala pa se nikad ne protežu preko granice dviju oznaka. "+
+    "Koji je od četiriju tragova konsenzus ocjenjivača nije potvrđeno u dokumentaciji PhysioNeta — "+
+    "skripta za izvlačenje koristi četvrti.";
+
+  var thTxt=!th?"prag nije zapisan":mode==="triage"
+    ?"dolje "+(+th[0]).toFixed(4)+", gore "+(+th[1]).toFixed(4)+(th[0]===th[1]?" — isti prag, u ovom foldu nema sloja NESIGURAN":"")
+    :"prag "+(+(th[1]||th[0])).toFixed(4);
+  $("vnote").innerHTML="<b>Kako je odluka nastala.</b> Model <code>"+$("strat").value+
+    "</code> dao je score_bad = "+(sc==null?"—":sc.toFixed(4))+". Način rada <code>"+mode+"</code>: "+thTxt+
+    ". Prozor je bio u foldu "+fold+", dakle model koji ga je ocijenio nije ga vidio u učenju — "+
+    "ni njega ni bilo koji drugi prozor pacijenta #"+m[1]+".<br><b>Što znači „istina\".</b> "+
+    (task()==="QRS"?"Zadatak QRS: dobar = klase 1 i 2, loš = klasa 3."
+                   :"Zadatak MORFOLOGIJA: dobar = klasa 1, loš = klase 2 i 3.")+
+    " Ista oznaka struke daje različitu istinu u dva zadatka, pa se rezultati dvaju zadataka ne smiju "+
+    "uspoređivati kao da mjere isto.";
+
+  $("runinfo").textContent=$("run").value+" · "+$("strat").value+" · "+mode;
+
+  var names=D.samples.sqi_names,vals=D.samples.sqi[si],half=Math.ceil(names.length/2),out="";
+  for(var h=0;h<2;h++){
+    out+='<div class="scroll"><table><thead><tr><th>Značajka</th><th class="n">Vrijednost</th></tr></thead><tbody>';
+    for(var i=h*half;i<Math.min(names.length,(h+1)*half);i++){
+      out+="<tr><td>"+names[i]+'</td><td class="n">'+(vals[i]==null?"—":fmtNum(vals[i]))+"</td></tr>";
+    }
+    out+="</tbody></table></div>";
+  }
+  $("sqi").innerHTML=out;
+}
+function fmtNum(v){
+  var a=Math.abs(v);
+  if(a===0)return "0";
+  if(a<.001)return v.toExponential(2);
+  if(a<1)return v.toFixed(4);
+  if(a<100)return v.toFixed(3);
+  return v.toFixed(1);
+}
+function stat(k,v,cls){return '<div class="stat"><span>'+k+'</span><div class="big '+(cls||"")+'">'+v+"</div></div>"}
+</script>
+</body>
+</html>

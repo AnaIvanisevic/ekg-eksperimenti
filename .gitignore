@@ -1,0 +1,6 @@
+# privatni materijali — nikad u javni repozitorij
+materijali/
+# sistemsko
+.DS_Store
+__pycache__/
+*.pyc
